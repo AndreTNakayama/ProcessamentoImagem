@@ -4,6 +4,7 @@ from fileinput import filename
 import io
 from optparse import Values
 import os
+from pickletools import optimize
 from stat import FILE_ATTRIBUTE_NORMAL
 import PySimpleGUI as sg
 from PIL import Image
@@ -24,7 +25,7 @@ def main():
         [
             sg.Button("Salvar Thumbnail"), 
             sg.Button("Qualidade Reduzida"),
-            sg.Combo(["JPEG", "GIF", "PNG", "BMP", "PDF", "SGV", "WEBP"], key="-COMBO-"),
+            sg.Combo(["JPEG", "GIF", "PNG", "BMP", "PDF", "SGV", "WEBP"], default_value="0", key="-COMBO-"),
             sg.Button("Salvar Imagem")
         ],
 
@@ -58,7 +59,7 @@ def main():
                 image = Image.open(filename)
                 MAX_SIZE = (100, 100) 
                 image.thumbnail(MAX_SIZE) 
-                image.save('thumbnail.png')
+                image.save('thumbnail.png', format="PNG", optimize=True)
 
         if event == "Qualidade Reduzida":
             filename = value["-FILE-"]
@@ -80,14 +81,13 @@ def main():
 
             if filename:
                 urllib.request.urlretrieve(filename, "teste")
-                image = Image.open("teste")
                 bio = io.BytesIO()
                 image.save(bio, format="PNG")
                 window["-IMAGE-"].update(data=bio.getvalue(), size=(500,500))
                 
 
     window.close()
-    os.remove("teste")
+    # os.remove("teste")
 
 if __name__ == "__main__":
     main()
