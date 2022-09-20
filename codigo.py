@@ -1,16 +1,15 @@
-import builtins
-from email.mime import image
-from fileinput import filename
 import io
-from optparse import Values
 import os
-from stat import FILE_ATTRIBUTE_NORMAL, filemode
+import webbrowser
 import urllib.request
-from PIL import ImageColor
 import PySimpleGUI as sg
+from PIL import ImageColor
 from  pathlib import Path
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
+from PIL import ImageFilter
+
+sg.theme('DarkAmber')
 
 file_types = [("(JPEG (*.jpg)","*.jpg"),
               ("All files (*.*)", "*.*")]
@@ -33,6 +32,30 @@ fields = {
     "GPSLatitude" : "GPS Latitude",
     "GPSLongitude" : "GPS Longitude"
 }
+
+def filter(input_image, output_image, type):
+    image = Image.open(input_image)
+    if type == "Blur":
+        filtered_image = image.filter(ImageFilter.BLUR)
+    if type == "BoxBlur":
+        filtered_image = image.filter(ImageFilter.BoxBlur(radius=3))
+    if type == "Contour":
+        filtered_image = image.filter(ImageFilter.CONTOUR)
+    if type == "Detail":
+        filtered_image = image.filter(ImageFilter.DETAIL)
+    if type == "Edge Enhance":
+        filtered_image = image.filter(ImageFilter.EDGE_ENHANCE)
+    if type == "Emboss":
+        filtered_image = image.filter(ImageFilter.EMBOSS)
+    if type == "Find Edges":
+        filtered_image = image.filter(ImageFilter.FIND_EDGES)
+    if type == "Gaussian Blur":
+        filtered_image = image.filter(ImageFilter.GaussianBlur)
+    if type == "Sharpen":
+        filtered_image = image.filter(ImageFilter.SHARPEN)
+    if type == "Smooth":
+        filtered_image = image.filter(ImageFilter.SMOOTH)
+    filtered_image.save(output_image)
 
 def get_exif_data(path):
     exif_data = {}
@@ -84,6 +107,13 @@ def quantidade_cores(imagem_entrada, imagem_saida, quantidade):
     imagem = imagem.convert("P", palette=Image.Palette.ADAPTIVE, colors=quantidade)
     imagem.save(imagem_saida)
 
+def carregarImagem(filename, window):
+    image = Image.open(filename)
+    image.thumbnail((500, 500))
+    bio = io.BytesIO()
+    image.save(bio, format="PNG")
+    window["-IMAGE-"].update(data=bio.getvalue(), size=(500,500))
+
 def calcula_paleta(branco):
     paleta = []
     r,g,b = branco
@@ -110,21 +140,21 @@ def _get_if_exist(data, key):
         return data[key]	
     return None
     
+def defteste(value, event, window):
+    filename = value["-FILE-"]
+    if os.path.exists(filename):
+        filter(filename, event + ".jpg", event)
+        carregarImagem(event + ".jpg", window)
+
 def main():
-    menu_def=['&File', ['&Save', '&Open', '&Load Image Data']],['&Filtro(s)', ['Preto e branco', 'Quantidade de cores', 'Serpia', 'Criar Imagem']]
+    menu_def=['&File', ['&Save', '&Open', '&Load Image Data', 'Filter', 
+    ['Blur', 'BoxBlur', 'Contour', 'Detail', 'Edge Enhance', 'Emboss', 'Find Edges', 'Gaussian Blur', 'Sharpen', 'Smooth']]],['&Filtro(s)', ['Preto e branco', 'Quantidade de cores', 'Serpia', 'Criar Imagem']]
 
     layout = [
-        [sg.Menu(menu_def, background_color='lightsteelblue',text_color='navy', disabled_text_color='yellow', font='Verdana', pad=(10,10))],
+        [sg.Menu(menu_def, background_color='lightsteelblue',text_color='navy', 
+            disabled_text_color='yellow', font='Verdana', pad=(10,10))],
 
         [sg.Combo([1, 4, 8, 16, 32, 64, 128], key="-QUANTIDADE-")],
-        # [
-        #     sg.Text("Filtro"), 
-        #     sg.Button("Preto e Branco"),
-        #     sg.Button("Criar Imagem"),
-        #     sg.Combo([1, 4, 8, 16, 32, 64, 128], key="-QUANTIDADE-"),
-        #     sg.Button("Quantidade de cores"),
-        #     sg.Button("Serpia")
-        # ],
 
         [sg.Image(key="-IMAGE-", size=(500, 500))],
 
@@ -154,24 +184,40 @@ def main():
     while True:
         event, value = window.read()
 
+        latitude = None
+        longitude = None
+
         if event == "Exit" or event == sg.WINDOW_CLOSED:
             break
 
         if event == "Load Image Data":
-            popup = [[sg.FileBrowse("Select your image", file_types=file_types, key="-LOAD-", enable_events=True)]]
+            col1=[[sg.Image(key="-IMAGEPOPUP-", size=(410, 410))],
+            [sg.FileBrowse("Select your image", file_types=file_types, key="-LOAD-", enable_events=True)]]
+            col2=[]
+
             for field in fields:
-                popup += [[sg.Text(fields[field], size=(10,1)),sg.Text("", size=(25,1), key=field)]]
+                col2 += [[sg.Text(fields[field], size=(10,1)),sg.Text("", size=(25,1), key=field)]]
 
-            popup += [[sg.Button("Verificar local da foto")]]
+            col2 += [[sg.Button("Verificar local da foto")]]
 
+            popup = [[sg.Column(col1), sg.Column(col2)]]
             popupWindow = sg.Window("Image information", popup)
-            
+
             while True:
                 event, values = popupWindow.read()
                 if event == "Exit" or event == sg.WIN_CLOSED:
                     break
+                
                 if event == "-LOAD-":
                     image_path = Path(values["-LOAD-"])
+                    
+                    image = Image.open(image_path)
+                    image.thumbnail((410, 410))
+                    bio = io.BytesIO()
+                    image.save(bio, format="PNG")
+                    popupWindow["-IMAGEPOPUP-"].update(data=bio.getvalue(), size=(410,410))
+                    
+                    # image_path = Path(values["-LOAD-"])
                     exif_data = get_exif_data(image_path.absolute())
 
                     if "GPSInfo" in exif_data:		
@@ -182,13 +228,28 @@ def main():
                             popupWindow[field].update(image_path.name)
                         elif field == "File size":
                             popupWindow[field].update(image_path.stat().st_size)
-                        elif field == "GPSLatitude":
+                        elif field == "GPSLatitude" and "GPSInfo" in exif_data:
                             popupWindow[field].update(_get_if_exist(gps_info, "GPSLatitude"))
-                        elif field == "GPSLongitude":
+                            # latitude = 
+                            x, y, z = _get_if_exist(gps_info, "GPSLatitude")
+                            latitude = round(float(x + (y + (z/60))/60), 8)
+                            print("", latitude)
+                        elif field == "GPSLongitude" and "GPSInfo" in exif_data:
                             popupWindow[field].update(_get_if_exist(gps_info, "GPSLongitude"))
+                            x, y, z = _get_if_exist(gps_info, "GPSLongitude")
+                            longitude = round(float(x + (y + (z/60))/60), 8)
+                            print("", longitude)
                         else:
                             popupWindow[field].update(exif_data.get(field, "No data"))
-            
+
+                if event == "Verificar local da foto":
+                    if latitude != None and longitude != None:
+                        webbrowser.open("https://www.google.com.br/maps/place/" + str(latitude) + ",-" + str(longitude))
+                        latitude = None
+                        longitude = None
+
+        if event == "Blur" or event == "BoxBlur" or event == "Contour" or event == "Detail" or event == "Edge Enhance" or event == "Emboss" or event == "Find Edges" or event == "Gaussian Blur" or event == "Sharpen" or event == "Smooth":
+            defteste(value, event, window)
 
         if event == "Preto e branco":
             filename = value["-FILE-"]
@@ -217,11 +278,7 @@ def main():
         if event == "Carregar Imagem":
             filename = value["-FILE-"]
             if os.path.exists(filename):
-                image = Image.open(filename)
-                image.thumbnail((500, 500))
-                bio = io.BytesIO()
-                image.save(bio, format="PNG")
-                window["-IMAGE-"].update(data=bio.getvalue(), size=(500,500))
+                carregarImagem(filename, window)
 
         if event == "Salvar Thumbnail":
             filename = value["-FILE-"]
@@ -267,7 +324,7 @@ def main():
                 window["-IMAGE-"].update(data=bio.getvalue(), size=(500,500))
                 
     window.close()
-    os.remove("teste")
+    # os.remove("teste")
     os.remove("thumbnailURL")
 
 if __name__ == "__main__":
