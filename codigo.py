@@ -1,3 +1,4 @@
+from fileinput import filename
 import io
 import os
 import webbrowser
@@ -109,10 +110,15 @@ def quantidade_cores(imagem_entrada, imagem_saida, quantidade):
 
 def carregarImagem(filename, window):
     image = Image.open(filename)
-    image.thumbnail((500, 500))
+    image.thumbnail((500,500))
     bio = io.BytesIO()
     image.save(bio, format="PNG")
-    window["-IMAGE-"].update(data=bio.getvalue(), size=(500,500))
+    window["-IMAGE-"].draw_image(data=bio.getvalue(), location=(0,400))
+    # image = Image.open(filename)
+    # image.thumbnail((500, 500))
+    # bio = io.BytesIO()
+    # image.save(bio, format="PNG")
+    # window["-IMAGE-"].update(data=bio.getvalue(), size=(500,500))
 
 def calcula_paleta(branco):
     paleta = []
@@ -146,17 +152,41 @@ def defteste(value, event, window):
         filter(filename, event + ".jpg", event)
         carregarImagem(event + ".jpg", window)
 
+def mirror(image_path, output_image_path):
+    image = Image.open(image_path)
+    mirror_image = image.transpose(Image.FLIP_LEFT_RIGHT) #FLIP_LEFT_RIGHT, FLIP_TOP_BOTTOM, TRANSPOSE
+    mirror_image.save(output_image_path)
+
+def rotate(image_path, degrees_to_rotate, output_image_path):
+    image_obj = Image.open(image_path)
+    rotated_image = image_obj.rotate(degrees_to_rotate)
+    rotated_image.save(output_image_path)
+
+def crop_image(image_path, coords, output_image_path):
+    image = Image.open(image_path)
+    cropped_image = image.crop(coords)
+    cropped_image.save(output_image_path)
+
+def resize(input_image_path, output_image_path, size):
+    image = Image.open(input_image_path)
+    percentual_largura = float(size) / float(image.width)
+    altura_desejada = int((image.height * percentual_largura))
+    resized_image = image.resize((size, altura_desejada), Image.ANTIALIAS)
+    resized_image.save(output_image_path)
+
 def main():
     menu_def=['&File', ['&Save', '&Open', '&Load Image Data', 'Filter', 
-    ['Blur', 'BoxBlur', 'Contour', 'Detail', 'Edge Enhance', 'Emboss', 'Find Edges', 'Gaussian Blur', 'Sharpen', 'Smooth']]],['&Filtro(s)', ['Preto e branco', 'Quantidade de cores', 'Serpia', 'Criar Imagem']]
+    ['Blur', 'BoxBlur', 'Contour', 'Detail', 'Edge Enhance', 'Emboss', 'Find Edges', 'Gaussian Blur', 'Sharpen', 'Smooth']]],['&Filtro(s)', ['Preto e branco', 'Quantidade de cores', 'Serpia', 'Criar Imagem']],['&Mais Filtros', ['Mirror', 'Rotacionar', 'Cortar', 'Resize']]
 
     layout = [
         [sg.Menu(menu_def, background_color='lightsteelblue',text_color='navy', 
             disabled_text_color='yellow', font='Verdana', pad=(10,10))],
 
-        [sg.Combo([1, 4, 8, 16, 32, 64, 128], key="-QUANTIDADE-")],
+        [sg.Combo([1, 4, 8, 16, 32, 64, 128], key="-QUANTIDADE-"), sg.Combo([90, -90], key="-ROTACIONAR-")],
 
-        [sg.Image(key="-IMAGE-", size=(500, 500))],
+        # [sg.Image(key="-IMAGE-", size=(500, 500))],
+        [sg.Graph(key="-IMAGE-", canvas_size=(500, 500), graph_bottom_left=(0, 0), graph_top_right=(400, 400), change_submits=True, drag_submits=True)],
+
 
         [
             sg.Text("Arquivo de Imagem"),
@@ -181,14 +211,41 @@ def main():
 
     window = sg.Window("Visualizador de Imagem", layout=layout)
 
+    dragging = False
+    ponto_inicial = ponto_final = retangulo = None
+
     while True:
         event, value = window.read()
 
         latitude = None
         longitude = None
 
-        if event == "Exit" or event == sg.WINDOW_CLOSED:
+        if event == "Exit" or event == sg.WIN_CLOSED:
             break
+        if event == "Carregar Imagem":
+            filename = value["-FILE-"]
+            if os.path.exists(filename):
+                carregarImagem(filename, window)
+
+        if event == "-IMAGE-":
+            x, y = value["-IMAGE-"]
+            if not dragging:
+                ponto_inicial = (x, y)
+                dragging = True
+            else:
+                ponto_final = (x, y)
+            if retangulo:
+                window["-IMAGE-"].delete_figure(retangulo)
+            if None not in (ponto_inicial, ponto_final):
+                retangulo = window["-IMAGE-"].draw_rectangle(ponto_inicial, ponto_final, line_color='red')
+                # Left, Upper = ponto_inicial
+                # Right, Lower = ponto_final
+
+        elif event.endswith('+UP'):
+            # crop_image(filename, (Left, Upper, Right, Lower), "cropped.jpg")
+            dragging = False
+
+
 
         if event == "Load Image Data":
             col1=[[sg.Image(key="-IMAGEPOPUP-", size=(410, 410))],
@@ -256,11 +313,30 @@ def main():
             if os.path.exists(filename):
                 muda_para_cinza(filename, "imagem_preto_branco.jpg")
 
+        if event == "Resize":
+            filename = value["-FILE-"]
+            if os.path.exists(filename):
+                resize(filename, "resized.jpg", 300)
+
         if event == "Quantidade de cores":
             filename = value["-FILE-"]
             if os.path.exists(filename):
                 quantidade = value["-QUANTIDADE-"]
                 quantidade_cores(filename, "quantidade_cores.png", quantidade)
+
+        if event == "Mirror":
+            filename = value["-FILE-"]
+            if os.path.exists(filename):
+                mirror(filename, "mirrored.jpg")
+                carregarImagem('mirrored.jpg', window)
+
+        if event == "Rotacionar":
+            filename = value["-FILE-"]
+            if os.path.exists(filename):
+                rotacao = value["-ROTACIONAR-"]
+                if rotacao:
+                    rotate(filename, rotacao, "rotated.jpg")
+                    carregarImagem('rotated.jpg', window)
 
         if event == "Serpia":
             filename = value["-FILE-"]
@@ -274,11 +350,6 @@ def main():
             urllib.request.urlretrieve(filename, "teste")
             image = Image.open("teste")
             image.save("URL", format="PNG")
-
-        if event == "Carregar Imagem":
-            filename = value["-FILE-"]
-            if os.path.exists(filename):
-                carregarImagem(filename, window)
 
         if event == "Salvar Thumbnail":
             filename = value["-FILE-"]
