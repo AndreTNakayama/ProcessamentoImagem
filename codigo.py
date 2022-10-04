@@ -9,11 +9,14 @@ from  pathlib import Path
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
 from PIL import ImageFilter
+import shutil
+import tempfile
+from PIL import ImageEnhance
 
 sg.theme('DarkAmber')
 
-file_types = [("(JPEG (*.jpg)","*.jpg"),
-              ("All files (*.*)", "*.*")]
+# file_types = [("(JPEG (*.jpg)","*.jpg"),
+#               ("All files (*.*)", "*.*")]
 
 fields = {
     "File name" : "File name",
@@ -32,6 +35,38 @@ fields = {
     "ShutterSpeedValue" : "Shutter Speed",
     "GPSLatitude" : "GPS Latitude",
     "GPSLongitude" : "GPS Longitude"
+}
+
+def brilho(filename, fator, output_filename):
+    image = Image.open(filename)
+    enhancer = ImageEnhance.Brightness(image)
+    new_image = enhancer.enhance(fator)
+    new_image.save(output_filename)
+
+def contraste(filename, fator, output_filename):
+    image = Image.open(filename)
+    enhancer = ImageEnhance.Contrast(image)
+    new_image = enhancer.enhance(fator)
+    new_image.save(output_filename)
+
+def cores(filename, fator, output_filename):
+    image = Image.open(filename)
+    enhancer = ImageEnhance.Color(image)
+    new_image = enhancer.enhance(fator)
+    new_image.save(output_filename)
+
+def nitidez(filename, fator, output_filename):
+    image = Image.open(filename)
+    enhancer = ImageEnhance.Sharpness(image)
+    new_image = enhancer.enhance(fator)
+    new_image.save(output_filename)
+
+efeitos = {
+    "Normal": shutil.copy,
+    "Brilho": brilho,
+    "Cores": cores,
+    "Contraste": contraste,
+    "Nitidez": nitidez
 }
 
 def filter(input_image, output_image, type):
@@ -166,6 +201,7 @@ def crop_image(image_path, coords, output_image_path):
     image = Image.open(image_path)
     cropped_image = image.crop(coords)
     cropped_image.save(output_image_path)
+    cropped_image.show()
 
 def resize(input_image_path, output_image_path, size):
     image = Image.open(input_image_path)
@@ -174,19 +210,73 @@ def resize(input_image_path, output_image_path, size):
     resized_image = image.resize((size, altura_desejada), Image.ANTIALIAS)
     resized_image.save(output_image_path)
 
+def aplica_efeito(values, window):
+    efeito_selecionado = values["-EFEITOS-"]
+    filename = values["-FILE-"]
+    factor = values["-FATOR-"]
+    
+    if filename:
+        if efeito_selecionado == "Normal":
+            efeitos[efeito_selecionado](filename, tmp_file)
+        else:
+            efeitos[efeito_selecionado](filename, factor, tmp_file)
+        # image = Image.open(tmp_file)
+        # image.thumbnail((100, 100))
+        # bio = io.BytesIO()
+        # image.save(bio, format="PNG")
+        # window["-IMAGEFILTRO-"].update(data=bio.getvalue(), size=(100, 100))
+
+        image = Image.open(tmp_file)
+        image.thumbnail((500,500))
+        bio = io.BytesIO()
+        image.save(bio, format="PNG")
+        window["-IMAGE-"].draw_image(data=bio.getvalue(), location=(0,400))
+        
+def save_image(filename):
+    save_filename = sg.popup_get_file("Salvar", file_types=file_types, save_as=True, no_window=True)
+    if save_filename == filename:
+        sg.popup_error("Você não pode substituir a imagem original!")
+    else:
+        if save_filename:
+            shutil.copy(tmp_file, save_filename)
+            sg.popup(f"Arquivo {save_filename}, salvo com sucesso!")
+
+def salvar_thumbnail(filename, bool, thumbnail):
+    if thumbnail == True:
+        if bool == True:
+            image = Image.open(filename)
+            MAX_SIZE = (100, 100) 
+            image.thumbnail(MAX_SIZE) 
+            image.save('thumbnail.png')
+        else:
+            urllib.request.urlretrieve(filename, "thumbnailURL")
+            image = Image.open("thumbnailURL")
+            MAX_SIZE = (100, 100) 
+            image.thumbnail(MAX_SIZE) 
+            # bio = io.BytesIO()
+            image.save("thumbnailURL.png", format="PNG")
+            image.show()
+    else:
+        save_image(filename)
+
+file_types = [("JPEG (*.jpg)", "*.jpg"), ("PNG (*.png)", "*.png"), ("All files (*.*)", "*.*")]
+tmp_file = tempfile.NamedTemporaryFile(suffix=".jpg").name
+
 def main():
+    effect_names = list(efeitos.keys())
+
     menu_def=['&File', ['&Save', '&Open', '&Load Image Data', 'Filter', 
     ['Blur', 'BoxBlur', 'Contour', 'Detail', 'Edge Enhance', 'Emboss', 'Find Edges', 'Gaussian Blur', 'Sharpen', 'Smooth']]],['&Filtro(s)', ['Preto e branco', 'Quantidade de cores', 'Serpia', 'Criar Imagem']],['&Mais Filtros', ['Mirror', 'Rotacionar', 'Cortar', 'Resize']]
 
     layout = [
-        [sg.Menu(menu_def, background_color='lightsteelblue',text_color='navy', 
+        [sg.Menu(menu_def, background_color='ivory',text_color='black', 
             disabled_text_color='yellow', font='Verdana', pad=(10,10))],
 
+        # [sg.Image(key="-IMAGEFILTRO-", size=(100, 100))],
+        [sg.Graph(key="-IMAGE-", canvas_size=(500, 400), graph_bottom_left=(0, 0), 
+        graph_top_right=(500, 400), change_submits=True, background_color='seashell', drag_submits=True)],
+
         [sg.Combo([1, 4, 8, 16, 32, 64, 128], key="-QUANTIDADE-"), sg.Combo([90, -90], key="-ROTACIONAR-")],
-
-        # [sg.Image(key="-IMAGE-", size=(500, 500))],
-        [sg.Graph(key="-IMAGE-", canvas_size=(500, 500), graph_bottom_left=(0, 0), graph_top_right=(400, 400), change_submits=True, drag_submits=True)],
-
 
         [
             sg.Text("Arquivo de Imagem"),
@@ -194,6 +284,13 @@ def main():
             sg.FileBrowse(file_types=[("JPEG (*.jpg)", "*.jpg"), ("Todos os ficheiros", "*.*")]),
             sg.Button("Carregar Imagem")
         ],
+
+        # [
+        #     sg.Text("Imagem: "),
+        #     sg.Input(size=(25, 1), key="-FILEFILTRO-"),
+        #     sg.FileBrowse(file_types=file_types),
+        #     sg.Button("Carregar a Imagem")
+        # ],
         
         [
             sg.Button("Salvar Thumbnail"), 
@@ -206,7 +303,15 @@ def main():
             sg.Text("Endereço de Imagem"),
             sg.Input(size=(25,1), key="-URL-"),
             sg.Button("Carregar Endereço (URL)")
-        ]
+        ],
+
+        [
+            sg.Text("Efeito"),
+            sg.Combo(effect_names, default_value="Normal", key="-EFEITOS-", enable_events=True, readonly=True),
+            sg.Slider(range=(0, 5), default_value=2, resolution=0.1, orientation="h", enable_events=True, key="-FATOR-"),
+        ],
+        
+        [sg.Button("Salvar a Imagem"), sg.Button("Salvar URL")]
     ]
 
     window = sg.Window("Visualizador de Imagem", layout=layout)
@@ -222,10 +327,19 @@ def main():
 
         if event == "Exit" or event == sg.WIN_CLOSED:
             break
-        if event == "Carregar Imagem":
-            filename = value["-FILE-"]
-            if os.path.exists(filename):
-                carregarImagem(filename, window)
+
+        if event in ["Carregar Imagem", "-EFEITOS-", "-FATOR-"]:
+            aplica_efeito(value, window)
+
+        filename = value["-FILE-"]
+
+        if event == "Salvar a Imagem" and filename:
+            save_image(filename)
+
+        # if event == "Carregar Imagem":
+        #     filename = value["-FILE-"]
+        #     if os.path.exists(filename):
+        #         carregarImagem(filename, window)
 
         if event == "-IMAGE-":
             x, y = value["-IMAGE-"]
@@ -236,16 +350,16 @@ def main():
                 ponto_final = (x, y)
             if retangulo:
                 window["-IMAGE-"].delete_figure(retangulo)
+                # Arrumar
             if None not in (ponto_inicial, ponto_final):
                 retangulo = window["-IMAGE-"].draw_rectangle(ponto_inicial, ponto_final, line_color='red')
-                # Left, Upper = ponto_inicial
-                # Right, Lower = ponto_final
-
         elif event.endswith('+UP'):
-            # crop_image(filename, (Left, Upper, Right, Lower), "cropped.jpg")
             dragging = False
 
-
+        if event == "Cortar":
+            filename = value["-FILE-"]
+            if os.path.exists(filename):
+                crop_image(filename, (140, 61, 328, 383), "cropped.jpg")
 
         if event == "Load Image Data":
             col1=[[sg.Image(key="-IMAGEPOPUP-", size=(410, 410))],
@@ -347,27 +461,21 @@ def main():
             cria_imagem("CriarImagem.png", (100, 100))
 
         if event == "Save":
-            urllib.request.urlretrieve(filename, "teste")
-            image = Image.open("teste")
-            image.save("URL", format="PNG")
+            # urllib.request.urlretrieve(filename, "teste")
+            # image = Image.open("teste")
+            # image.save("URL", format="PNG")
+            filename = value["-FILE-"]
+            if os.path.exists(filename):
+                save_image(filename)
 
         if event == "Salvar Thumbnail":
             filename = value["-FILE-"]
             url = value["-URL-"]
-
             if filename:
-                image = Image.open(filename)
-                MAX_SIZE = (100, 100) 
-                image.thumbnail(MAX_SIZE) 
-                image.save('thumbnail.png')
+                salvar_thumbnail(filename, True, True)
             if url:
-                urllib.request.urlretrieve(url, "thumbnailURL")
-                image = Image.open("thumbnailURL")
-                MAX_SIZE = (100, 100) 
-                image.thumbnail(MAX_SIZE) 
-                # bio = io.BytesIO()
-                image.save("thumbnailURL.png", format="PNG")
-
+                salvar_thumbnail(url, False, True)
+            
         if event == "Qualidade Reduzida":
             filename = value["-FILE-"]
 
@@ -383,6 +491,7 @@ def main():
                 image = Image.open(filename)
                 teste = value["-COMBO-"]
                 image.save("Imagem." + teste, format=teste)
+                filename = value["-FILE-"]
 
         if event == "Carregar Endereço (URL)":
             filename = value["-URL-"]
@@ -390,13 +499,26 @@ def main():
             if filename:
                 urllib.request.urlretrieve(filename, "teste")
                 image = Image.open("teste")
+                image.thumbnail((500,500))
                 bio = io.BytesIO()
                 image.save(bio, format="PNG")
-                window["-IMAGE-"].update(data=bio.getvalue(), size=(500,500))
+                window["-IMAGE-"].draw_image(data=bio.getvalue(), location=(0,400))
                 
+        if event == "Salvar URL":
+            filename = value["-URL-"]
+
+            if filename:
+                urllib.request.urlretrieve(filename, "thumbnailURL")
+                image = Image.open("thumbnailURL")
+                MAX_SIZE = (500, 500) 
+                image.thumbnail(MAX_SIZE) 
+                # bio = io.BytesIO()
+                image.save("URL.png", format="PNG")
+                image.show()
+
     window.close()
     # os.remove("teste")
-    os.remove("thumbnailURL")
+    # os.remove("thumbnailURL")
 
 if __name__ == "__main__":
     main()
